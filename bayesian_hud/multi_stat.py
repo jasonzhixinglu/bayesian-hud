@@ -290,50 +290,36 @@ def plot_population_scatter() -> plt.Figure:
     return fig
 
 
-def plot_variance_decomposition() -> plt.Figure:
+def plot_variance_decomposition():
     """
-    Stacked bar chart showing within- vs between-archetype variance
-    as fractions of total variance for each stat.
+    Print a formatted table showing within- vs between-archetype variance
+    for each stat.
 
     Computed analytically from archetype parameters (no simulation).
 
     Returns
     -------
-    fig : matplotlib Figure
+    None
     """
     mu, sigma, pi = get_archetype_params()
+    mu_pop  = pi @ mu                    # (3,)
+    between = pi @ (mu - mu_pop) ** 2   # (3,)
+    within  = pi @ sigma ** 2           # (3,)
+    total   = between + within          # (3,)
+    ratio   = between / total           # (3,)
 
-    mu_pop      = pi @ mu                                             # (3,)
-    between_var = np.sum(pi[:, None] * (mu - mu_pop[None, :]) ** 2, axis=0)  # (3,)
-    within_var  = np.sum(pi[:, None] * sigma ** 2, axis=0)           # (3,)
-    total_var   = between_var + within_var                            # (3,)
-
-    between_frac = between_var / total_var
-    within_frac  = within_var  / total_var
-
-    x     = np.arange(len(STAT_NAMES))
-    width = 0.5
-
-    fig, ax = plt.subplots(figsize=(7, 5))
-
-    ax.bar(x, within_frac,  width, label="Within-archetype",
-           color="#aec6e8", alpha=0.9)
-    ax.bar(x, between_frac, width, bottom=within_frac,
-           label="Between-archetype", color="#2980b9", alpha=0.9)
-
-    for i in range(len(STAT_NAMES)):
-        ratio = between_frac[i]
-        ax.text(i, 1.02, f"B/(B+W)={ratio:.2f}",
-                ha="center", va="bottom", fontsize=9)
-
-    ax.set_xticks(x)
-    ax.set_xticklabels(STAT_NAMES)
-    ax.set_ylabel("Fraction of total variance")
-    ax.set_title("Variance decomposition: within vs between archetype")
-    ax.set_ylim(0, 1.18)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=2, frameon=False)
-    plt.tight_layout()
-    return fig
+    stat_labels = ['VPIP', 'PFR', '3B']
+    header = f"{'Stat':<8} {'Between':>10} {'Within':>10} {'Total':>10} {'B/(B+W)':>10}"
+    sep = '─' * len(header)
+    print("Variance decomposition: within vs between archetype")
+    print(sep)
+    print(header)
+    print(sep)
+    for j, name in enumerate(stat_labels):
+        print(f"{name:<8} {between[j]:>10.4f} {within[j]:>10.4f} "
+              f"{total[j]:>10.4f} {ratio[j]:>10.2f}")
+    print(sep)
+    return None
 
 
 def plot_correlation_structure() -> plt.Figure:

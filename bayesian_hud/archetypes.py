@@ -59,6 +59,10 @@ ARCHETYPES: Dict[str, dict] = {
                 "call":  0.65,
                 "raise": 0.10,
             },
+            "flop_checkraise_vs_call": {
+                "bet":   0.20,
+                "check": 0.80,
+            },
             "turn_vs_barrel": {
                 "fold":  0.30,
                 "call":  0.60,
@@ -67,6 +71,15 @@ ARCHETYPES: Dict[str, dict] = {
             "turn_donk": {
                 "donk":  0.10,
                 "check": 0.90,
+            },
+            "river_donk": {
+                "donk":  0.08,
+                "check": 0.92,
+            },
+            "river_vs_barrel": {
+                "fold":  0.20,
+                "call":  0.70,
+                "raise": 0.10,
             },
         },
     },
@@ -85,18 +98,31 @@ ARCHETYPES: Dict[str, dict] = {
                 "check": 0.85,
             },
             "flop_vs_cbet": {
-                "fold":  0.55,
+                "fold":  0.50,
                 "call":  0.30,
-                "raise": 0.15,
+                "raise": 0.20,
+            },
+            "flop_checkraise_vs_call": {
+                "bet":   0.25,
+                "check": 0.75,
             },
             "turn_vs_barrel": {
-                "fold":  0.55,
-                "call":  0.25,
-                "raise": 0.20,
+                "fold":  0.60,
+                "call":  0.30,
+                "raise": 0.10,
             },
             "turn_donk": {
                 "donk":  0.15,
                 "check": 0.85,
+            },
+            "river_donk": {
+                "donk":  0.10,
+                "check": 0.90,
+            },
+            "river_vs_barrel": {
+                "fold":  0.65,
+                "call":  0.25,
+                "raise": 0.10,
             },
         },
     },
@@ -115,18 +141,31 @@ ARCHETYPES: Dict[str, dict] = {
                 "check": 0.75,
             },
             "flop_vs_cbet": {
-                "fold":  0.30,
-                "call":  0.35,
-                "raise": 0.35,
+                "fold":  0.25,
+                "call":  0.30,
+                "raise": 0.45,
+            },
+            "flop_checkraise_vs_call": {
+                "bet":   0.70,
+                "check": 0.30,
             },
             "turn_vs_barrel": {
-                "fold":  0.25,
-                "call":  0.35,
+                "fold":  0.20,
+                "call":  0.40,
                 "raise": 0.40,
             },
             "turn_donk": {
                 "donk":  0.30,
                 "check": 0.70,
+            },
+            "river_donk": {
+                "donk":  0.28,
+                "check": 0.72,
+            },
+            "river_vs_barrel": {
+                "fold":  0.20,
+                "call":  0.35,
+                "raise": 0.45,
             },
         },
     },

@@ -112,36 +112,36 @@ def trace_path(
 
 _DEFAULT_PATHS = [
     (
-        "Path A — Passive fish",
+        "Path A — Fish (passive call-down)",
         [
-            ("preflop",        "call"),
-            ("flop_donk",      "check"),
-            ("flop_vs_cbet",   "call"),
-            ("turn_donk",      "check"),
-            ("turn_vs_barrel", "call"),
+            ("preflop",          "call"),
+            ("flop_donk",        "check"),
+            ("flop_vs_cbet",     "call"),
+            ("turn_donk",        "check"),
+            ("turn_vs_barrel",   "call"),
+            ("river_donk",       "check"),
+            ("river_vs_barrel",  "call"),
         ],
     ),
     (
-        "Path B — Tight fold",
+        "Path B — TAG (identified at terminal fold)",
         [
-            ("preflop",      "call"),
-            ("flop_donk",    "check"),
-            ("flop_vs_cbet", "fold"),
+            ("preflop",          "call"),
+            ("flop_donk",        "check"),
+            ("flop_vs_cbet",     "call"),
+            ("turn_donk",        "check"),
+            ("turn_vs_barrel",   "call"),
+            ("river_donk",       "check"),
+            ("river_vs_barrel",  "fold"),
         ],
     ),
     (
-        "Path C — Aggressive",
+        "Path C — LAG (check-raise flop, barrel turn)",
         [
-            ("preflop",      "call"),
-            ("flop_donk",    "check"),
-            ("flop_vs_cbet", "raise"),
-        ],
-    ),
-    (
-        "Path D — LAG donk",
-        [
-            ("preflop",   "call"),
-            ("flop_donk", "donk"),
+            ("preflop",                   "call"),
+            ("flop_donk",                 "check"),
+            ("flop_vs_cbet",              "raise"),
+            ("flop_checkraise_vs_call",   "bet"),
         ],
     ),
 ]
@@ -164,7 +164,7 @@ def plot_posterior_evolution(
     if paths is None:
         paths = _DEFAULT_PATHS
 
-    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     fig.suptitle(
         "Archetype posterior evolution — BTN vs BB",
         fontsize=14,
@@ -211,28 +211,38 @@ def plot_posterior_evolution(
 
 _TREE_EDGES = [
     # (parent_node, action, child_node_or_terminal_label)
-    ("PREFLOP",      "fold",   "TERMINAL"),
-    ("PREFLOP",      "threbet","TERMINAL"),
-    ("PREFLOP",      "call",   "FLOP_DONK"),
-    ("FLOP_DONK",    "donk",   "TERMINAL"),
-    ("FLOP_DONK",    "check",  "FLOP_VS_CBET"),
-    ("FLOP_VS_CBET", "fold",   "TERMINAL"),
-    ("FLOP_VS_CBET", "raise",  "TERMINAL"),
-    ("FLOP_VS_CBET", "call",   "TURN_DONK"),
-    ("TURN_DONK",    "donk",   "TERMINAL"),
-    ("TURN_DONK",    "check",  "TURN_VS_BARREL"),
-    ("TURN_VS_BARREL","fold",  "TERMINAL"),
-    ("TURN_VS_BARREL","call",  "TERMINAL"),
-    ("TURN_VS_BARREL","raise", "TERMINAL"),
+    ("PREFLOP",                 "fold",   "TERMINAL"),
+    ("PREFLOP",                 "threbet","TERMINAL"),
+    ("PREFLOP",                 "call",   "FLOP_DONK"),
+    ("FLOP_DONK",               "donk",   "TERMINAL"),
+    ("FLOP_DONK",               "check",  "FLOP_VS_CBET"),
+    ("FLOP_VS_CBET",            "fold",   "TERMINAL"),
+    ("FLOP_VS_CBET",            "raise",  "FLOP_CHECKRAISE_VS_CALL"),
+    ("FLOP_VS_CBET",            "call",   "TURN_DONK"),
+    ("FLOP_CHECKRAISE_VS_CALL", "check",  "TERMINAL"),
+    ("FLOP_CHECKRAISE_VS_CALL", "bet",    "TERMINAL"),
+    ("TURN_DONK",               "donk",   "TERMINAL"),
+    ("TURN_DONK",               "check",  "TURN_VS_BARREL"),
+    ("TURN_VS_BARREL",          "fold",   "TERMINAL"),
+    ("TURN_VS_BARREL",          "raise",  "TERMINAL"),
+    ("TURN_VS_BARREL",          "call",   "RIVER_DONK"),
+    ("RIVER_DONK",              "donk",   "TERMINAL"),
+    ("RIVER_DONK",              "check",  "RIVER_VS_BARREL"),
+    ("RIVER_VS_BARREL",         "fold",   "TERMINAL"),
+    ("RIVER_VS_BARREL",         "call",   "TERMINAL"),
+    ("RIVER_VS_BARREL",         "raise",  "TERMINAL"),
 ]
 
 # Map each non-terminal node to the action_probs key
 _NODE_KEY = {
-    "PREFLOP":        "preflop",
-    "FLOP_DONK":      "flop_donk",
-    "FLOP_VS_CBET":   "flop_vs_cbet",
-    "TURN_DONK":      "turn_donk",
-    "TURN_VS_BARREL": "turn_vs_barrel",
+    "PREFLOP":                 "preflop",
+    "FLOP_DONK":               "flop_donk",
+    "FLOP_VS_CBET":            "flop_vs_cbet",
+    "FLOP_CHECKRAISE_VS_CALL": "flop_checkraise_vs_call",
+    "TURN_DONK":               "turn_donk",
+    "TURN_VS_BARREL":          "turn_vs_barrel",
+    "RIVER_DONK":              "river_donk",
+    "RIVER_VS_BARREL":         "river_vs_barrel",
 }
 
 
@@ -343,18 +353,21 @@ def plot_path_tree() -> plt.Figure:
     # ------------------------------------------------------------------
     n_leaves = leaf_counter[0]
     fig_h = max(8, n_leaves * 0.75)
-    fig, ax = plt.subplots(figsize=(16, fig_h))
-    ax.set_xlim(-0.5, 5.5)
+    fig, ax = plt.subplots(figsize=(18, fig_h))
+    ax.set_xlim(-0.5, 7.5)
     ax.set_ylim(-1, n_leaves)
     ax.axis("off")
     ax.set_title("BTN vs BB Decision Tree  (F=Fish, T=TAG, L=LAG)", fontsize=12)
 
     node_labels = {
-        "PREFLOP":        "PREFLOP",
-        "FLOP_DONK":      "FLOP\n(OOP)",
-        "FLOP_VS_CBET":   "FLOP\nvs CBET",
-        "TURN_DONK":      "TURN\n(OOP)",
-        "TURN_VS_BARREL": "TURN\nvs BARREL",
+        "PREFLOP":                 "PREFLOP",
+        "FLOP_DONK":               "FLOP\n(OOP)",
+        "FLOP_VS_CBET":            "FLOP\nvs CBET",
+        "FLOP_CHECKRAISE_VS_CALL": "FLOP\nCR vs CALL",
+        "TURN_DONK":               "TURN\n(OOP)",
+        "TURN_VS_BARREL":          "TURN\nvs BARREL",
+        "RIVER_DONK":              "RIVER\n(OOP)",
+        "RIVER_VS_BARREL":         "RIVER\nvs BARREL",
     }
 
     # Draw edges first (under nodes)
