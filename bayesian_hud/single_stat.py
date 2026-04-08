@@ -8,7 +8,7 @@ Estimator
 ---------
 Given a player with n opportunities and observed rate theta_hat:
   s_hat   = sqrt(theta_hat * (1 - theta_hat) / n)   # sampling std
-  w       = sigma / (sigma + s_hat)                  # data weight
+  w       = sigma**2 / (sigma**2 + s_hat**2)          # data weight
   theta_b = mu + w * (theta_hat - mu)                # shrinkage estimate
 
 When n is small, s_hat is large → w is small → estimate shrinks toward mu.
@@ -67,7 +67,7 @@ def bayesian_estimate(
 
     s_hat   = np.sqrt(theta_hat * (1.0 - theta_hat) / np.maximum(n, 1))
     s_hat   = np.clip(s_hat, 1e-9, None)
-    w       = sigma / (sigma + s_hat)
+    w       = sigma**2 / (sigma**2 + s_hat**2)
     theta_b = mu + w * (theta_hat - mu)
 
     return theta_b, s_hat, w
@@ -121,9 +121,9 @@ def simulate_population(
     # True rates: Normal(mu, sigma) clipped to [0.01, 0.99]
     theta_true = rng.normal(mu, sigma, size=n_players).clip(0.01, 0.99)
 
-    # Observed successes and raw estimates
+    # Observed successes and Laplace-smoothed estimates
     successes = rng.binomial(n_opp, theta_true)
-    theta_hat = successes / n_opp
+    theta_hat = (successes + 0.5) / (n_opp + 1.0)
 
     theta_b, s_hat, w = bayesian_estimate(theta_hat, mu, sigma, n_opp)
 
@@ -202,7 +202,7 @@ def _population_priors() -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 
 def plot_estimation_comparison(
-    total_hands: int = 50,
+    total_hands: int = 100,
     n_players: int = 2000,
     seed: int = 42,
 ) -> plt.Figure:
@@ -229,7 +229,7 @@ def plot_estimation_comparison(
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
     fig.suptitle(
-        f"Raw vs Bayesian estimates  |  {total_hands} hands/player, "
+        f"Raw vs Bayesian estimates  |  {total_hands} opportunities/player, "
         f"n={n_players:,} players",
         fontsize=13,
     )
