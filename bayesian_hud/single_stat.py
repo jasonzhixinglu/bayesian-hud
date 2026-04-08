@@ -205,7 +205,7 @@ def _population_priors() -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 
 def plot_estimation_comparison(
-    total_hands: int = 500,
+    total_hands: int = 100,
     n_players: int = 2000,
     seed: int = 42,
 ) -> plt.Figure:
@@ -232,15 +232,9 @@ def plot_estimation_comparison(
     opp_rates = STAT_OPP_RATES
 
     avg_opps = [int(total_hands * r) for r in opp_rates]
-    title = (
-        f"{total_hands} hands/player  "
-        f"(avg opps: {STAT_NAMES[0]}~{avg_opps[0]}, "
-        f"{STAT_NAMES[1]}~{avg_opps[1]}, "
-        f"{STAT_NAMES[2]}~{avg_opps[2]})"
-    )
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle(title, fontsize=13)
+    fig.suptitle(f"{total_hands} hands/player", fontsize=13)
 
     for ax, stat_name, mu, sigma, opp_rate in zip(
         axes, STAT_NAMES, mu_pop, sigma_pop, opp_rates
@@ -263,7 +257,7 @@ def plot_estimation_comparison(
         ]
 
         ax.scatter(true, hat,   alpha=0.3, s=8, color="#e74c3c",
-                   label=f"Raw   RMSE={rmse_raw:.4f}")
+                   label=f"MLE   RMSE={rmse_raw:.4f}")
         ax.scatter(true, bayes, alpha=0.3, s=8, color="#3498db",
                    label=f"Bayes RMSE={rmse_bayes:.4f}")
         ax.plot(lim, lim, "k--", linewidth=1, label="45° line")
@@ -284,47 +278,45 @@ def plot_estimation_comparison(
 
 def plot_shrinkage_curves() -> plt.Figure:
     """
-    Plot shrinkage weight w vs opportunity count for each stat.
+    Plot shrinkage weight w vs total hands observed for each stat.
 
     Uses population-weighted mu and sigma. Marks the crossover point
-    (w = 0.5) on each curve.
+    (w = 0.5) on each curve, expressed in hands.
 
     Returns
     -------
     fig : matplotlib Figure
     """
     mu_pop, sigma_pop = _population_priors()
-    n_grid = np.linspace(1, 500, 1000)
+    n_hands_grid = np.logspace(1, 3, 500)  # 10 to 1000 hands
 
     fig, ax = plt.subplots(figsize=(9, 5))
 
-    for stat_name, mu, sigma, color in zip(
-        STAT_NAMES, mu_pop, sigma_pop, ARCHETYPE_COLORS
+    for stat_name, mu, sigma, opp_rate, color in zip(
+        STAT_NAMES, mu_pop, sigma_pop, STAT_OPP_RATES, ARCHETYPE_COLORS
     ):
-        w, crossover_n = shrinkage_weight_curve(mu, sigma, n_grid)
+        n_opp_grid = n_hands_grid * opp_rate
+        s = np.sqrt(mu * (1.0 - mu) / np.maximum(n_opp_grid, 1e-9))
+        w = sigma ** 2 / (sigma ** 2 + s ** 2)
 
-        ax.plot(n_grid, w, color=color, linewidth=2, label=stat_name)
+        ax.plot(n_hands_grid, w, color=color, linewidth=2, label=stat_name)
 
-        # Mark crossover point
-        w_cross, _, _ = bayesian_estimate(mu, mu, sigma, crossover_n)
-        ax.scatter(
-            [crossover_n], [0.5],
-            color=color, s=80, zorder=5,
-            marker="D",
-        )
+        # Crossover in hands: mu*(1-mu) / (sigma^2 * opp_rate)
+        crossover_hands = mu * (1.0 - mu) / (sigma ** 2 * opp_rate)
+        ax.scatter([crossover_hands], [0.5], color=color, s=80, zorder=5, marker="D")
         ax.annotate(
-            f"n={crossover_n:.0f}",
-            xy=(crossover_n, 0.5),
-            xytext=(crossover_n + 10, 0.5 - 0.04),
+            f"N={crossover_hands:.0f}",
+            xy=(crossover_hands, 0.5),
+            xytext=(crossover_hands * 1.15, 0.5 - 0.04),
             fontsize=8,
             color=color,
         )
 
     ax.axhline(0.5, color="gray", linestyle="--", linewidth=0.8, alpha=0.7)
     ax.set_xscale("log")
-    ax.set_xlabel("Opportunities observed (log scale)")
+    ax.set_xlabel("Hands observed (log scale)")
     ax.set_ylabel("Data weight w")
-    ax.set_title("Shrinkage weight vs opportunities  (w=0.5 crossover marked)")
+    ax.set_title("Shrinkage weight vs hands observed  (w=0.5 crossover marked)")
     ax.legend()
     ax.set_ylim(0, 1.02)
 
@@ -371,11 +363,11 @@ def plot_rmse_vs_hands(
             rmse_bayes[i, j] = np.sqrt(np.mean((sim["theta_b"]   - sim["theta_true"]) ** 2))
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle("RMSE vs total hands: raw vs Bayesian", fontsize=13)
+    fig.suptitle("RMSE vs total hands: MLE vs Bayesian", fontsize=13)
 
     for j, (ax, stat_name) in enumerate(zip(axes, STAT_NAMES)):
         ax.plot(n_values, rmse_raw[:, j],   color="red",  marker="o", linewidth=2,
-                markersize=5, label="Raw")
+                markersize=5, label="MLE")
         ax.plot(n_values, rmse_bayes[:, j], color="blue", marker="o", linewidth=2,
                 markersize=5, label="Bayesian")
         ax.set_xlabel("Total hands")

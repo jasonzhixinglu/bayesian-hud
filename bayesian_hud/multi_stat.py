@@ -331,7 +331,7 @@ def plot_variance_decomposition() -> plt.Figure:
     ax.set_ylabel("Fraction of total variance")
     ax.set_title("Variance decomposition: within vs between archetype")
     ax.set_ylim(0, 1.18)
-    ax.legend(bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.05), ncol=2, frameon=False)
     plt.tight_layout()
     return fig
 
@@ -458,7 +458,7 @@ def simulate_archetype_draws(
 # New plots
 # ---------------------------------------------------------------------------
 
-def plot_archetype_posteriors_bar(
+def plot_archetype_posteriors_line(
     n_values: list | None = None,
     n_draws: int = 100,
     seed: int = 42,
@@ -470,9 +470,8 @@ def plot_archetype_posteriors_bar(
     N=0 means prior only — posterior = pi for all draws.
 
     Layout: 1×3 subplots, one per true archetype.
-    Each subplot: grouped bar chart with one group per N value.
-    x tick labels: ['prior', '100', '250', '500', '1000']
-    Within each group: 3 bars (one per archetype), colored by ARCHETYPE_COLORS.
+    Each subplot: line plot with x=n_values, 3 lines (one per archetype),
+    colored by ARCHETYPE_COLORS.
     Legend on last subplot only, placed outside.
 
     Returns
@@ -489,7 +488,6 @@ def plot_archetype_posteriors_bar(
     mean_posteriors = np.zeros((len(n_values), K, K))
     for i, N in enumerate(n_values):
         if N == 0:
-            # Prior only: posterior = pi for every draw regardless of true arch
             for k in range(K):
                 mean_posteriors[i, k, :] = pi
         else:
@@ -498,34 +496,21 @@ def plot_archetype_posteriors_bar(
                 mean_posteriors[i, k, :] = draws[name]["posteriors"].mean(axis=0)
 
     fig, axes = plt.subplots(1, 3, figsize=(16, 5))
-    n_groups = len(n_values)
-    x = np.arange(n_groups)
-    bar_width = 0.25
-    offsets = np.array([-1, 0, 1]) * bar_width
-
-    tick_labels = []
-    for N in n_values:
-        tick_labels.append("prior" if N == 0 else str(N))
 
     for k_true, (ax, true_name) in enumerate(zip(axes, ARCHETYPE_NAMES)):
         for k_arch, (arch_name, color) in enumerate(zip(ARCHETYPE_NAMES, ARCHETYPE_COLORS)):
-            heights = mean_posteriors[:, k_true, k_arch]
-            bars = ax.bar(
-                x + offsets[k_arch], heights, bar_width,
-                color=color, alpha=0.85, label=arch_name,
+            ax.plot(
+                n_values, mean_posteriors[:, k_true, k_arch],
+                color=color, marker="o", linewidth=2, markersize=5, label=arch_name,
             )
 
-        ax.set_xticks(x)
-        ax.set_xticklabels(tick_labels)
         ax.set_xlabel("N (total hands)")
         ax.set_ylabel("Mean P(archetype | data)")
         ax.set_ylim(0, 1)
         ax.set_title(f"True archetype: {true_name}")
 
     # Legend on last subplot only, outside chart
-    axes[-1].legend(
-        bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0
-    )
+    axes[-1].legend(bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
 
     plt.tight_layout()
     return fig
@@ -570,7 +555,7 @@ def plot_rmse_by_archetype(
 
     for k, (ax, name) in enumerate(zip(axes, ARCHETYPE_NAMES)):
         ax.plot(n_values, rmse_raw[:, k],    color="red",   marker="o", linewidth=2,
-                markersize=5, label="Raw")
+                markersize=5, label="MLE")
         ax.plot(n_values, rmse_single[:, k], color="blue",  marker="o", linewidth=2,
                 markersize=5, label="Single-stat Bayes")
         ax.plot(n_values, rmse_arch[:, k],   color="green", marker="o", linewidth=2,
@@ -629,7 +614,7 @@ def plot_rmse_unconditional(
 
     fig, ax = plt.subplots(figsize=(8, 5))
     ax.plot(n_values, rmse_raw_w,    color="red",   marker="o", linewidth=2,
-            markersize=5, label="Raw")
+            markersize=5, label="MLE")
     ax.plot(n_values, rmse_single_w, color="blue",  marker="o", linewidth=2,
             markersize=5, label="Single-stat Bayes")
     ax.plot(n_values, rmse_arch_w,   color="green", marker="o", linewidth=2,
