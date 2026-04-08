@@ -77,8 +77,8 @@ ARCHETYPES: Dict[str, dict] = {
                 "check": 0.92,
             },
             "river_vs_barrel": {
-                "fold":  0.20,
-                "call":  0.70,
+                "fold":  0.05,
+                "call":  0.85,
                 "raise": 0.10,
             },
         },

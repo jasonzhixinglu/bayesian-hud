@@ -398,7 +398,7 @@ def plot_path_tree() -> plt.Figure:
     for uid, (x, y) in node_pos.items():
         if uid.startswith("TERMINAL"):
             ax.plot(x, y, marker="x", markersize=10, color="#c0392b", linewidth=2)
-            ax.text(x + 0.05, y, "end", ha="left", va="center",
+            ax.text(x + 0.05, y, "n/e", ha="left", va="center",
                     fontsize=7, color="#c0392b")
         else:
             label = node_labels.get(uid, uid)
