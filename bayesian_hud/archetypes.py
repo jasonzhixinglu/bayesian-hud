@@ -40,7 +40,7 @@ ARCHETYPES: Dict[str, dict] = {
     "Fish": {
         # Gaussian prior over [VPIP, PFR, 3B%]
         "mu":    [0.45, 0.10, 0.03],
-        "sigma": [0.06, 0.04, 0.02],
+        "sigma": [0.08, 0.06, 0.03],
         # Population share
         "pi": 0.40,
         # BTN-vs-BB decision-node action probabilities
@@ -71,7 +71,7 @@ ARCHETYPES: Dict[str, dict] = {
         },
     },
     "TAG": {
-        "mu":    [0.22, 0.18, 0.07],
+        "mu":    [0.22, 0.18, 0.08],
         "sigma": [0.04, 0.04, 0.02],
         "pi": 0.45,
         "action_probs": {
@@ -101,7 +101,7 @@ ARCHETYPES: Dict[str, dict] = {
         },
     },
     "LAG": {
-        "mu":    [0.35, 0.28, 0.12],
+        "mu":    [0.35, 0.28, 0.16],
         "sigma": [0.05, 0.05, 0.03],
         "pi": 0.15,
         "action_probs": {

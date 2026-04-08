@@ -184,16 +184,19 @@ def shrinkage_weight_curve(
 
 def _population_priors() -> tuple[np.ndarray, np.ndarray]:
     """
-    Compute population-weighted mu and sigma for each stat.
+    Compute population-weighted mu and sigma for each stat using the
+    law of total variance (between-archetype + within-archetype).
 
     Returns
     -------
-    mu_pop    : (3,) weighted average of archetype means
-    sigma_pop : (3,) weighted average of archetype stds
+    mu_pop    : (3,) unconditional population mean per stat
+    sigma_pop : (3,) unconditional population std per stat
     """
     mu, sigma, pi = get_archetype_params()
-    mu_pop    = pi @ mu     # (3,)
-    sigma_pop = pi @ sigma  # (3,)
+    mu_pop      = pi @ mu                                                      # (3,)
+    between_var = np.sum(pi[:, None] * (mu - mu_pop[None, :]) ** 2, axis=0)   # (3,)
+    within_var  = np.sum(pi[:, None] * sigma ** 2,                  axis=0)   # (3,)
+    sigma_pop   = np.sqrt(between_var + within_var)
     return mu_pop, sigma_pop
 
 
@@ -202,20 +205,20 @@ def _population_priors() -> tuple[np.ndarray, np.ndarray]:
 # ---------------------------------------------------------------------------
 
 def plot_estimation_comparison(
-    total_hands: int = 100,
+    total_hands: int = 500,
     n_players: int = 2000,
     seed: int = 42,
 ) -> plt.Figure:
     """
     Compare raw vs Bayesian estimates against true values for each stat.
 
-    Runs simulate_population for VPIP, PFR, and 3B% using population-
-    weighted mu and sigma, then creates a 1×3 scatter plot.
+    For each stat, n_opp per player is drawn as Binomial(total_hands, opp_rate),
+    minimum 1, so VPIP gets ~total_hands opps, PFR ~20%, 3B ~15%.
 
     Parameters
     ----------
     total_hands : int
-        Hands observed per simulated player.
+        Total hands observed per simulated player.
     n_players : int
         Number of players per stat simulation.
     seed : int
@@ -226,16 +229,21 @@ def plot_estimation_comparison(
     fig : matplotlib Figure
     """
     mu_pop, sigma_pop = _population_priors()
+    opp_rates = STAT_OPP_RATES
 
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    fig.suptitle(
-        f"Raw vs Bayesian estimates  |  {total_hands} opportunities/player, "
-        f"n={n_players:,} players",
-        fontsize=13,
+    avg_opps = [int(total_hands * r) for r in opp_rates]
+    title = (
+        f"{total_hands} hands/player  "
+        f"(avg opps: {STAT_NAMES[0]}~{avg_opps[0]}, "
+        f"{STAT_NAMES[1]}~{avg_opps[1]}, "
+        f"{STAT_NAMES[2]}~{avg_opps[2]})"
     )
 
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig.suptitle(title, fontsize=13)
+
     for ax, stat_name, mu, sigma, opp_rate in zip(
-        axes, STAT_NAMES, mu_pop, sigma_pop, STAT_OPP_RATES
+        axes, STAT_NAMES, mu_pop, sigma_pop, opp_rates
     ):
         sim = simulate_population(mu, sigma, opp_rate, total_hands, n_players, seed=seed)
         true  = sim["theta_true"]
@@ -313,12 +321,67 @@ def plot_shrinkage_curves() -> plt.Figure:
         )
 
     ax.axhline(0.5, color="gray", linestyle="--", linewidth=0.8, alpha=0.7)
-    ax.set_xlabel("Opportunities observed")
+    ax.set_xscale("log")
+    ax.set_xlabel("Opportunities observed (log scale)")
     ax.set_ylabel("Data weight w")
     ax.set_title("Shrinkage weight vs opportunities  (w=0.5 crossover marked)")
     ax.legend()
-    ax.set_xlim(0, n_grid[-1])
     ax.set_ylim(0, 1.02)
+
+    plt.tight_layout()
+    return fig
+
+
+def plot_rmse_vs_hands(
+    n_values: list | None = None,
+    n_players: int = 1000,
+) -> plt.Figure:
+    """
+    RMSE vs total hands for raw and Bayesian estimators, one subplot per stat.
+
+    For each N in n_values and each stat, simulates n_players using population
+    priors from _population_priors() and computes RMSE for raw (theta_hat)
+    and Bayesian (theta_b) estimates.
+
+    Parameters
+    ----------
+    n_values : list of int, or None
+        Hand counts to evaluate. Defaults to [100, 250, 500, 1000].
+    n_players : int
+        Number of players per simulation.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    if n_values is None:
+        n_values = [100, 250, 500, 1000]
+
+    mu_pop, sigma_pop = _population_priors()
+
+    rmse_raw   = np.zeros((len(n_values), 3))
+    rmse_bayes = np.zeros((len(n_values), 3))
+
+    for i, N in enumerate(n_values):
+        for j, (mu, sigma, opp_rate) in enumerate(
+            zip(mu_pop, sigma_pop, STAT_OPP_RATES)
+        ):
+            sim = simulate_population(mu, sigma, opp_rate, N, n_players, seed=i * 10 + j)
+            rmse_raw[i, j]   = np.sqrt(np.mean((sim["theta_hat"] - sim["theta_true"]) ** 2))
+            rmse_bayes[i, j] = np.sqrt(np.mean((sim["theta_b"]   - sim["theta_true"]) ** 2))
+
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    fig.suptitle("RMSE vs total hands: raw vs Bayesian", fontsize=13)
+
+    for j, (ax, stat_name) in enumerate(zip(axes, STAT_NAMES)):
+        ax.plot(n_values, rmse_raw[:, j],   color="red",  marker="o", linewidth=2,
+                markersize=5, label="Raw")
+        ax.plot(n_values, rmse_bayes[:, j], color="blue", marker="o", linewidth=2,
+                markersize=5, label="Bayesian")
+        ax.set_xlabel("Total hands")
+        ax.set_ylabel("RMSE")
+        ax.set_title(stat_name)
+        ax.legend()
 
     plt.tight_layout()
     return fig

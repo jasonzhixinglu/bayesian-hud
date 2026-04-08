@@ -331,7 +331,7 @@ def plot_variance_decomposition() -> plt.Figure:
     ax.set_ylabel("Fraction of total variance")
     ax.set_title("Variance decomposition: within vs between archetype")
     ax.set_ylim(0, 1.18)
-    ax.legend()
+    ax.legend(bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
     plt.tight_layout()
     return fig
 
@@ -369,101 +369,275 @@ def plot_correlation_structure() -> plt.Figure:
     return fig
 
 
-def plot_archetype_convergence(
-    n_values: list | None = None,
-    seed: int = 42,
-) -> plt.Figure:
+# ---------------------------------------------------------------------------
+# New simulation helper
+# ---------------------------------------------------------------------------
+
+def simulate_archetype_draws(
+    N: int,
+    n_draws: int = 100,
+    seed: int | None = None,
+) -> dict:
     """
-    Two-panel figure showing archetype posterior convergence and RMSE vs N.
+    For each archetype k, draw n_draws players and compute posterior and
+    estimates analytically without simulating individual hands.
 
-    Row 1 (3 subplots): For one representative player from each archetype,
-    shows how P(archetype | data) evolves as N (total hands) grows.
-
-    Row 2 (single wide subplot): RMSE averaged across all stats and players
-    for raw, single-stat Bayes, and archetype Bayes as N grows.
+    For each draw d and archetype k:
+      theta_true[d,j] ~ N(mu[k,j], sigma[k,j]) clipped [0.01, 0.99]
+      n_opp[j] = round(N * opp_rate[j]), min 1  (deterministic)
+      theta_hat[d,j] ~ N(theta_true[d,j],
+                          sqrt(theta_true[d,j]*(1-theta_true[d,j])/n_opp[j]))
+                       clipped [0.01, 0.99]
+      archetype_posterior, archetype_weighted_estimate, and
+      single-stat Bayesian estimate via _population_priors() are all computed.
 
     Parameters
     ----------
-    n_values : list of int, or None
-        Sample sizes to evaluate. Defaults to [50, 100, 250, 500, 1000].
-    seed : int
-        RNG seed.
+    N       : int   Total hands (used to compute n_opp = round(N * opp_rate))
+    n_draws : int   Number of draws per archetype
+    seed    : int   RNG seed
+
+    Returns
+    -------
+    dict keyed by archetype name, each value a dict with:
+      'theta_true'     : (n_draws, 3)
+      'theta_hat'      : (n_draws, 3)
+      'theta_b_single' : (n_draws, 3)
+      'theta_b_arch'   : (n_draws, 3)
+      'posteriors'     : (n_draws, 3)  archetype posteriors
+    """
+    rng = np.random.default_rng(seed)
+    mu, sigma, pi = get_archetype_params()          # (K,3), (K,3), (K,)
+    mu_pop, sigma_pop = _population_priors()         # (3,), (3,)
+    opp_rates = np.array(STAT_OPP_RATES)            # (3,)
+    K = len(ARCHETYPE_NAMES)
+
+    # Deterministic opportunity counts for this N
+    n_opp = np.maximum(np.round(N * opp_rates).astype(int), 1)  # (3,)
+
+    result = {}
+    for k, name in enumerate(ARCHETYPE_NAMES):
+        theta_true     = np.zeros((n_draws, 3))
+        theta_hat      = np.zeros((n_draws, 3))
+        theta_b_single = np.zeros((n_draws, 3))
+        theta_b_arch   = np.zeros((n_draws, 3))
+        posteriors     = np.zeros((n_draws, K))
+
+        for d in range(n_draws):
+            # Draw true rate from archetype k
+            tt = rng.normal(mu[k], sigma[k]).clip(0.01, 0.99)  # (3,)
+            theta_true[d] = tt
+
+            # Sampling noise and noisy observation
+            s = np.sqrt(tt * (1.0 - tt) / n_opp).clip(1e-9, None)  # (3,)
+            th = rng.normal(tt, s).clip(0.01, 0.99)                  # (3,)
+            theta_hat[d] = th
+
+            # Single-stat Bayesian estimate using population priors
+            for j in range(3):
+                tb, _, _ = bayesian_estimate(th[j], mu_pop[j], sigma_pop[j], n_opp[j])
+                theta_b_single[d, j] = float(tb)
+
+            # Archetype posterior and archetype-weighted estimate
+            post = archetype_posterior(th, n_opp, mu, sigma, pi)
+            posteriors[d] = post
+            theta_b_arch[d] = archetype_weighted_estimate(th, n_opp, post, mu, sigma)
+
+        result[name] = {
+            "theta_true":     theta_true,
+            "theta_hat":      theta_hat,
+            "theta_b_single": theta_b_single,
+            "theta_b_arch":   theta_b_arch,
+            "posteriors":     posteriors,
+        }
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# New plots
+# ---------------------------------------------------------------------------
+
+def plot_archetype_posteriors_bar(
+    n_values: list | None = None,
+    n_draws: int = 100,
+    seed: int = 42,
+) -> plt.Figure:
+    """
+    For each N in n_values and each true archetype, show the mean posterior
+    probability P(archetype | data) averaged across n_draws players.
+
+    N=0 means prior only — posterior = pi for all draws.
+
+    Layout: 1×3 subplots, one per true archetype.
+    Each subplot: grouped bar chart with one group per N value.
+    x tick labels: ['prior', '100', '250', '500', '1000']
+    Within each group: 3 bars (one per archetype), colored by ARCHETYPE_COLORS.
+    Legend on last subplot only, placed outside.
 
     Returns
     -------
     fig : matplotlib Figure
     """
     if n_values is None:
-        n_values = [50, 100, 250, 500, 1000]
+        n_values = [0, 100, 250, 500, 1000]
 
-    rng = np.random.default_rng(seed)
     mu, sigma, pi = get_archetype_params()
-    opp_rates = np.array(STAT_OPP_RATES)
+    K = len(ARCHETYPE_NAMES)
 
-    fig = plt.figure(figsize=(15, 10))
-    gs  = fig.add_gridspec(2, 3, hspace=0.45, wspace=0.35)
+    # Build mean posteriors: shape (len(n_values), K_true, K_posterior)
+    mean_posteriors = np.zeros((len(n_values), K, K))
+    for i, N in enumerate(n_values):
+        if N == 0:
+            # Prior only: posterior = pi for every draw regardless of true arch
+            for k in range(K):
+                mean_posteriors[i, k, :] = pi
+        else:
+            draws = simulate_archetype_draws(N, n_draws=n_draws, seed=seed)
+            for k, name in enumerate(ARCHETYPE_NAMES):
+                mean_posteriors[i, k, :] = draws[name]["posteriors"].mean(axis=0)
 
-    # ── Row 1: posterior convergence, one subplot per archetype ──────────────
-    for k, (archetype_name, color_k) in enumerate(zip(ARCHETYPE_NAMES, ARCHETYPE_COLORS)):
-        ax = fig.add_subplot(gs[0, k])
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    n_groups = len(n_values)
+    x = np.arange(n_groups)
+    bar_width = 0.25
+    offsets = np.array([-1, 0, 1]) * bar_width
 
-        # Draw one representative player from archetype k
-        theta_true = rng.normal(mu[k], sigma[k]).clip(0.01, 0.99)  # (3,)
+    tick_labels = []
+    for N in n_values:
+        tick_labels.append("prior" if N == 0 else str(N))
 
-        posteriors_vs_n = []
-        for N in n_values:
-            n_opp     = rng.binomial(N, opp_rates).clip(min=1)
-            successes = rng.binomial(n_opp, theta_true)
-            theta_hat = (successes + 0.5) / (n_opp + 1.0)
-            post      = archetype_posterior(theta_hat, n_opp, mu, sigma, pi)
-            posteriors_vs_n.append(post)
+    for k_true, (ax, true_name) in enumerate(zip(axes, ARCHETYPE_NAMES)):
+        for k_arch, (arch_name, color) in enumerate(zip(ARCHETYPE_NAMES, ARCHETYPE_COLORS)):
+            heights = mean_posteriors[:, k_true, k_arch]
+            bars = ax.bar(
+                x + offsets[k_arch], heights, bar_width,
+                color=color, alpha=0.85, label=arch_name,
+            )
 
-        posteriors_vs_n = np.array(posteriors_vs_n)  # (len(n_values), K)
-
-        for j, (name, color) in enumerate(zip(ARCHETYPE_NAMES, ARCHETYPE_COLORS)):
-            ax.plot(n_values, posteriors_vs_n[:, j], color=color, linewidth=2,
-                    marker="o", markersize=5, label=name)
-
-        # Dashed horizontal line marking the true archetype at y=1
-        ax.axhline(1.0, color=color_k, linestyle="--", linewidth=1.0, alpha=0.6)
-
-        theta_str = "[" + ", ".join(f"{v:.2f}" for v in theta_true) + "]"
-        ax.set_title(f"True: {archetype_name}\ntheta={theta_str}", fontsize=10)
+        ax.set_xticks(x)
+        ax.set_xticklabels(tick_labels)
         ax.set_xlabel("N (total hands)")
-        ax.set_ylabel("P(archetype | data)")
+        ax.set_ylabel("Mean P(archetype | data)")
         ax.set_ylim(0, 1)
-        ax.legend(fontsize=8)
+        ax.set_title(f"True archetype: {true_name}")
 
-    # ── Row 2: RMSE vs N (single wide subplot) ───────────────────────────────
-    ax_rmse = fig.add_subplot(gs[1, :])
+    # Legend on last subplot only, outside chart
+    axes[-1].legend(
+        bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0
+    )
 
-    rmse_raw_list    = []
-    rmse_single_list = []
-    rmse_arch_list   = []
+    plt.tight_layout()
+    return fig
+
+
+def plot_rmse_by_archetype(
+    n_values: list | None = None,
+    n_draws: int = 100,
+    seed: int = 42,
+) -> plt.Figure:
+    """
+    For each true archetype, show RMSE vs N for three methods:
+    raw, single-stat Bayes, archetype Bayes.
+    RMSE averaged across n_draws and across all 3 stats.
+
+    Layout: 1×3 subplots, one per true archetype.
+    Lines: red=raw, blue=single-stat Bayes, green=archetype Bayes.
+    Legend on last subplot only, outside chart.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    if n_values is None:
+        n_values = [100, 250, 500, 1000]
+
+    K = len(ARCHETYPE_NAMES)
+    rmse_raw    = np.zeros((len(n_values), K))
+    rmse_single = np.zeros((len(n_values), K))
+    rmse_arch   = np.zeros((len(n_values), K))
 
     for i, N in enumerate(n_values):
-        sim        = simulate_archetype_population(
-            total_hands=N, n_players=1000, seed=100 + i
-        )
-        theta_true = sim["theta_true"]
-        theta_hat  = sim["theta_hat"]
-        theta_b_s  = sim["theta_b_single"]
-        theta_b_a  = sim["theta_b_arch"]
+        draws = simulate_archetype_draws(N, n_draws=n_draws, seed=seed)
+        for k, name in enumerate(ARCHETYPE_NAMES):
+            d = draws[name]
+            rmse_raw[i, k]    = np.sqrt(np.mean((d["theta_hat"]      - d["theta_true"]) ** 2))
+            rmse_single[i, k] = np.sqrt(np.mean((d["theta_b_single"] - d["theta_true"]) ** 2))
+            rmse_arch[i, k]   = np.sqrt(np.mean((d["theta_b_arch"]   - d["theta_true"]) ** 2))
 
-        rmse_raw_list.append(np.sqrt(np.mean((theta_hat  - theta_true) ** 2)))
-        rmse_single_list.append(np.sqrt(np.mean((theta_b_s - theta_true) ** 2)))
-        rmse_arch_list.append(np.sqrt(np.mean((theta_b_a  - theta_true) ** 2)))
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig.suptitle("RMSE by archetype (avg across stats)", fontsize=13)
 
-    ax_rmse.plot(n_values, rmse_raw_list,    color="#e74c3c", linewidth=2,
-                 marker="o", markersize=6, label="Raw")
-    ax_rmse.plot(n_values, rmse_single_list, color="#3498db", linewidth=2,
-                 marker="o", markersize=6, label="Single-stat Bayes")
-    ax_rmse.plot(n_values, rmse_arch_list,   color="#2ecc71", linewidth=2,
-                 marker="o", markersize=6, label="Archetype Bayes")
+    for k, (ax, name) in enumerate(zip(axes, ARCHETYPE_NAMES)):
+        ax.plot(n_values, rmse_raw[:, k],    color="red",   marker="o", linewidth=2,
+                markersize=5, label="Raw")
+        ax.plot(n_values, rmse_single[:, k], color="blue",  marker="o", linewidth=2,
+                markersize=5, label="Single-stat Bayes")
+        ax.plot(n_values, rmse_arch[:, k],   color="green", marker="o", linewidth=2,
+                markersize=5, label="Archetype Bayes")
+        ax.set_xlabel("N (total hands)")
+        ax.set_ylabel("RMSE (avg across stats)")
+        ax.set_title(f"True archetype: {name}")
 
-    ax_rmse.set_xlabel("N (total hands)")
-    ax_rmse.set_ylabel("RMSE (averaged across stats)")
-    ax_rmse.set_title("RMSE vs sample size — all three methods")
-    ax_rmse.legend()
+    # Legend on last subplot only, outside chart
+    axes[-1].legend(
+        bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0
+    )
 
+    plt.tight_layout()
+    return fig
+
+
+def plot_rmse_unconditional(
+    n_values: list | None = None,
+    n_draws: int = 100,
+    seed: int = 42,
+) -> plt.Figure:
+    """
+    Population-weighted RMSE vs N for raw, single-stat Bayes, archetype Bayes.
+
+    For each N, computes RMSE per archetype from simulate_archetype_draws,
+    then takes pi-weighted average across archetypes and across all 3 stats.
+
+    Single panel figure. Legend outside chart.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    if n_values is None:
+        n_values = [100, 250, 500, 1000]
+
+    _, _, pi = get_archetype_params()
+    K = len(ARCHETYPE_NAMES)
+    rmse_raw    = np.zeros((len(n_values), K))
+    rmse_single = np.zeros((len(n_values), K))
+    rmse_arch   = np.zeros((len(n_values), K))
+
+    for i, N in enumerate(n_values):
+        draws = simulate_archetype_draws(N, n_draws=n_draws, seed=seed)
+        for k, name in enumerate(ARCHETYPE_NAMES):
+            d = draws[name]
+            rmse_raw[i, k]    = np.sqrt(np.mean((d["theta_hat"]      - d["theta_true"]) ** 2))
+            rmse_single[i, k] = np.sqrt(np.mean((d["theta_b_single"] - d["theta_true"]) ** 2))
+            rmse_arch[i, k]   = np.sqrt(np.mean((d["theta_b_arch"]   - d["theta_true"]) ** 2))
+
+    # pi-weighted average across archetypes
+    rmse_raw_w    = rmse_raw    @ pi
+    rmse_single_w = rmse_single @ pi
+    rmse_arch_w   = rmse_arch   @ pi
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    ax.plot(n_values, rmse_raw_w,    color="red",   marker="o", linewidth=2,
+            markersize=5, label="Raw")
+    ax.plot(n_values, rmse_single_w, color="blue",  marker="o", linewidth=2,
+            markersize=5, label="Single-stat Bayes")
+    ax.plot(n_values, rmse_arch_w,   color="green", marker="o", linewidth=2,
+            markersize=5, label="Archetype Bayes")
+    ax.set_xlabel("N (total hands)")
+    ax.set_ylabel("RMSE (population-weighted avg)")
+    ax.set_title("RMSE vs sample size — population average")
+    ax.legend(bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+
+    plt.tight_layout()
     return fig
