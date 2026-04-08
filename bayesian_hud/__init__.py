@@ -20,6 +20,10 @@ from .multi_stat import (
     simulate_archetype_population,
     plot_archetype_posteriors,
     plot_estimate_improvement,
+    plot_population_scatter,
+    plot_variance_decomposition,
+    plot_correlation_structure,
+    plot_sequential_updating,
 )
 from .decision_tree import (
     update_posterior,
@@ -46,6 +50,10 @@ __all__ = [
     "simulate_archetype_population",
     "plot_archetype_posteriors",
     "plot_estimate_improvement",
+    "plot_population_scatter",
+    "plot_variance_decomposition",
+    "plot_correlation_structure",
+    "plot_sequential_updating",
     "update_posterior",
     "trace_path",
     "plot_posterior_evolution",

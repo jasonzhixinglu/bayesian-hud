@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.patches import Ellipse
 from scipy.special import logsumexp
 from scipy import stats
 
@@ -310,5 +311,196 @@ def plot_estimate_improvement(
     ax.legend()
     ax.set_ylim(0, rmse_raw.max() * 1.25)
 
+    plt.tight_layout()
+    return fig
+
+
+def plot_population_scatter() -> plt.Figure:
+    """
+    2D scatter of VPIP vs PFR for a simulated archetype population.
+
+    Simulates 800 players (200 hands each) from the archetype mixture,
+    colours points by true archetype, and overlays ±1 sigma ellipses
+    for each archetype in VPIP/PFR space.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    sim = simulate_archetype_population(total_hands=200, n_players=800, seed=1)
+    theta_true = sim["theta_true"]      # (800, 3)
+    true_arch  = sim["true_archetype"]  # (800,)
+
+    mu, sigma, _ = get_archetype_params()
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    for k, (name, color) in enumerate(zip(ARCHETYPE_NAMES, ARCHETYPE_COLORS)):
+        mask = true_arch == k
+        ax.scatter(
+            theta_true[mask, 0], theta_true[mask, 1],
+            color=color, alpha=0.45, s=15, label=name,
+        )
+        # ±1 sigma ellipse centered at (mu_vpip, mu_pfr)
+        ellipse = Ellipse(
+            xy=(mu[k, 0], mu[k, 1]),
+            width=2 * sigma[k, 0],
+            height=2 * sigma[k, 1],
+            fill=False, edgecolor=color, linewidth=2.0, linestyle="--",
+        )
+        ax.add_patch(ellipse)
+
+    ax.set_xlabel("VPIP")
+    ax.set_ylabel("PFR")
+    ax.set_title("Population scatter: VPIP vs PFR by archetype  (±1σ ellipses)")
+    ax.legend()
+    plt.tight_layout()
+    return fig
+
+
+def plot_variance_decomposition() -> plt.Figure:
+    """
+    Stacked bar chart showing within- vs between-archetype variance
+    as fractions of total variance for each stat.
+
+    Computed analytically from archetype parameters (no simulation).
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    mu, sigma, pi = get_archetype_params()
+
+    mu_pop      = pi @ mu                                             # (3,)
+    between_var = np.sum(pi[:, None] * (mu - mu_pop[None, :]) ** 2, axis=0)  # (3,)
+    within_var  = np.sum(pi[:, None] * sigma ** 2, axis=0)           # (3,)
+    total_var   = between_var + within_var                            # (3,)
+
+    between_frac = between_var / total_var
+    within_frac  = within_var  / total_var
+
+    x     = np.arange(len(STAT_NAMES))
+    width = 0.5
+
+    fig, ax = plt.subplots(figsize=(7, 5))
+
+    ax.bar(x, within_frac,  width, label="Within-archetype",
+           color="#aec6e8", alpha=0.9)
+    ax.bar(x, between_frac, width, bottom=within_frac,
+           label="Between-archetype", color="#2980b9", alpha=0.9)
+
+    for i in range(len(STAT_NAMES)):
+        ratio = between_frac[i]
+        ax.text(i, 1.02, f"B/(B+W)={ratio:.2f}",
+                ha="center", va="bottom", fontsize=9)
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(STAT_NAMES)
+    ax.set_ylabel("Fraction of total variance")
+    ax.set_title("Variance decomposition: within vs between archetype")
+    ax.set_ylim(0, 1.18)
+    ax.legend()
+    plt.tight_layout()
+    return fig
+
+
+def plot_correlation_structure() -> plt.Figure:
+    """
+    1×4 subplot: global and per-archetype correlation heatmaps of theta_true.
+
+    Simulates 2000 players (500 hands each) to obtain clean theta_true values.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    sim = simulate_archetype_population(total_hands=500, n_players=2000, seed=2)
+    theta_true = sim["theta_true"]      # (2000, 3)
+    true_arch  = sim["true_archetype"]  # (2000,)
+
+    fig, axes = plt.subplots(1, 4, figsize=(16, 4))
+
+    def _plot_corr(ax: plt.Axes, data: np.ndarray, title: str) -> None:
+        corr = np.corrcoef(data.T)
+        im   = ax.imshow(corr, cmap="RdBu_r", vmin=-1, vmax=1)
+        ax.set_xticks(range(3))
+        ax.set_yticks(range(3))
+        ax.set_xticklabels(STAT_NAMES, fontsize=8)
+        ax.set_yticklabels(STAT_NAMES, fontsize=8)
+        ax.set_title(title, fontsize=10)
+        for i in range(3):
+            for j in range(3):
+                text_color = "white" if abs(corr[i, j]) > 0.5 else "black"
+                ax.text(j, i, f"{corr[i, j]:.2f}",
+                        ha="center", va="center", fontsize=9, color=text_color)
+        plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+
+    _plot_corr(axes[0], theta_true, "Global")
+    for k, (name, ax) in enumerate(zip(ARCHETYPE_NAMES, axes[1:])):
+        mask = true_arch == k
+        _plot_corr(ax, theta_true[mask], name)
+
+    fig.suptitle("Correlation structure of true rates (theta_true)", fontsize=12)
+    plt.tight_layout()
+    return fig
+
+
+def plot_sequential_updating(
+    examples: list | None = None,
+) -> plt.Figure:
+    """
+    Line plots showing P(archetype) evolving as stats are revealed one by one.
+
+    Parameters
+    ----------
+    examples : list of (label, theta_hat_vec, n_opp_vec), or None for defaults.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    if examples is None:
+        examples = [
+            ("Fish-like",   [0.42, 0.11, 0.02], [80, 16, 12]),
+            ("Ambiguous",   [0.28, 0.20, 0.07], [80, 16, 12]),
+            ("LAG-like",    [0.36, 0.27, 0.11], [80, 16, 12]),
+        ]
+
+    mu, sigma, pi = get_archetype_params()
+    x_labels = ["VPIP", "+PFR", "+3B%"]
+
+    fig, axes = plt.subplots(1, len(examples), figsize=(5 * len(examples), 5))
+    if len(examples) == 1:
+        axes = [axes]
+
+    for ax, (label, theta_hat_vec, n_opp_vec) in zip(axes, examples):
+        theta_hat = np.asarray(theta_hat_vec, dtype=float)
+        n_opp     = np.asarray(n_opp_vec,     dtype=float)
+
+        step_posteriors = []
+        for step in range(1, 4):
+            post = archetype_posterior(
+                theta_hat[:step],
+                n_opp[:step],
+                mu[:, :step],
+                sigma[:, :step],
+                pi,
+            )
+            step_posteriors.append(post)
+
+        for k, (name, color) in enumerate(zip(ARCHETYPE_NAMES, ARCHETYPE_COLORS)):
+            vals = [p[k] for p in step_posteriors]
+            ax.plot(range(3), vals, color=color, linewidth=2,
+                    marker="o", markersize=7, label=name)
+
+        ax.set_xticks(range(3))
+        ax.set_xticklabels(x_labels)
+        ax.set_ylim(0, 1.05)
+        ax.set_ylabel("P(archetype)")
+        ax.set_title(label)
+        ax.legend(fontsize=9)
+        ax.grid(axis="y", alpha=0.3)
+
+    fig.suptitle("Sequential archetype updating as stats are revealed", fontsize=12)
     plt.tight_layout()
     return fig
