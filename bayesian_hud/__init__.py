@@ -27,6 +27,7 @@ from .multi_stat import (
     plot_archetype_posteriors_bar,
     plot_rmse_by_archetype,
     plot_rmse_unconditional,
+    plot_stat_informativeness,
 )
 from .decision_tree import (
     update_posterior,
@@ -60,6 +61,7 @@ __all__ = [
     "plot_archetype_posteriors_bar",
     "plot_rmse_by_archetype",
     "plot_rmse_unconditional",
+    "plot_stat_informativeness",
     "update_posterior",
     "trace_path",
     "plot_posterior_evolution",

@@ -641,3 +641,86 @@ def plot_rmse_unconditional(
 
     plt.tight_layout()
     return fig
+
+
+_STAT_COLORS = ["#e67e22", "#8e44ad", "#16a085"]  # orange, purple, teal
+
+
+def plot_stat_informativeness(
+    n_values: list | None = None,
+    n_draws: int = 100,
+    seed: int = 42,
+) -> plt.Figure:
+    """
+    For each stat j, compute the expected KL divergence between the
+    archetype posterior using only that stat versus the prior,
+    averaged across n_draws players from each archetype.
+
+    KL divergence from prior pi to posterior p:
+      KL(p || pi) = sum_k p[k] * log(p[k] / pi[k])
+
+    Layout: 1×3 subplots, one per true archetype.
+    x=n_values, 3 lines one per stat (VPIP orange, PFR purple, 3B teal).
+    Legend on last subplot only, outside chart.
+
+    Returns
+    -------
+    fig : matplotlib Figure
+    """
+    if n_values is None:
+        n_values = [100, 250, 500, 1000]
+
+    rng = np.random.default_rng(seed)
+    mu, sigma, pi = get_archetype_params()      # (K, 3), (K, 3), (K,)
+    opp_rates = np.array(STAT_OPP_RATES)        # (3,)
+    K = len(ARCHETYPE_NAMES)
+    J = len(STAT_NAMES)
+
+    # mean_kl[i_N, k_true, j_stat]
+    mean_kl = np.zeros((len(n_values), K, J))
+
+    for i, N in enumerate(n_values):
+        n_opp_full = np.maximum(np.round(N * opp_rates).astype(int), 1)  # (3,)
+
+        for k in range(K):
+            kl_draws = np.zeros((n_draws, J))
+
+            for d in range(n_draws):
+                # Draw true rate from archetype k (all stats, but we use each independently)
+                tt = rng.normal(mu[k], sigma[k]).clip(0.01, 0.99)  # (3,)
+
+                for j in range(J):
+                    n_opp_j = n_opp_full[j]
+                    s = np.sqrt(tt[j] * (1.0 - tt[j]) / n_opp_j).clip(1e-9, None)
+                    th_j = float(np.clip(rng.normal(tt[j], s), 0.01, 0.99))
+
+                    # Posterior using only stat j: pass 1-element slices
+                    post = archetype_posterior(
+                        np.array([th_j]),
+                        np.array([n_opp_j], dtype=float),
+                        mu[:, j:j+1],
+                        sigma[:, j:j+1],
+                        pi,
+                    )  # (K,)
+
+                    # KL(post || pi)
+                    kl = np.sum(post * np.log(post / pi))
+                    kl_draws[d, j] = kl
+
+            mean_kl[i, k, :] = kl_draws.mean(axis=0)
+
+    fig, axes = plt.subplots(1, 3, figsize=(16, 5))
+    fig.suptitle("Per-stat KL divergence from prior (single-stat posterior)", fontsize=13)
+
+    for k, (ax, true_name) in enumerate(zip(axes, ARCHETYPE_NAMES)):
+        for j, (stat_name, color) in enumerate(zip(STAT_NAMES, _STAT_COLORS)):
+            ax.plot(n_values, mean_kl[:, k, j], color=color, marker="o",
+                    linewidth=2, markersize=5, label=stat_name)
+        ax.set_xlabel("N (total hands)")
+        ax.set_ylabel("Mean KL divergence from prior")
+        ax.set_title(f"True archetype: {true_name}")
+
+    axes[-1].legend(bbox_to_anchor=(1.01, 1), loc="upper left", borderaxespad=0)
+
+    plt.tight_layout()
+    return fig
