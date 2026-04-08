@@ -120,9 +120,9 @@ ARCHETYPES: Dict[str, dict] = {
                 "check": 0.90,
             },
             "river_vs_barrel": {
-                "fold":  0.65,
-                "call":  0.25,
-                "raise": 0.10,
+                "fold":  0.75,
+                "call":  0.22,
+                "raise": 0.03,
             },
         },
     },

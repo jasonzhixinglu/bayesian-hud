@@ -211,26 +211,27 @@ def plot_posterior_evolution(
 
 _TREE_EDGES = [
     # (parent_node, action, child_node_or_terminal_label)
+    # TERMINAL = hand ends here; NOT_EXPLORED = branch exists but not modeled
     ("PREFLOP",                 "fold",   "TERMINAL"),
-    ("PREFLOP",                 "threbet","TERMINAL"),
+    ("PREFLOP",                 "threbet","NOT_EXPLORED"),
     ("PREFLOP",                 "call",   "FLOP_DONK"),
-    ("FLOP_DONK",               "donk",   "TERMINAL"),
+    ("FLOP_DONK",               "donk",   "NOT_EXPLORED"),
     ("FLOP_DONK",               "check",  "FLOP_VS_CBET"),
     ("FLOP_VS_CBET",            "fold",   "TERMINAL"),
     ("FLOP_VS_CBET",            "raise",  "FLOP_CHECKRAISE_VS_CALL"),
     ("FLOP_VS_CBET",            "call",   "TURN_DONK"),
-    ("FLOP_CHECKRAISE_VS_CALL", "check",  "TERMINAL"),
-    ("FLOP_CHECKRAISE_VS_CALL", "bet",    "TERMINAL"),
-    ("TURN_DONK",               "donk",   "TERMINAL"),
+    ("FLOP_CHECKRAISE_VS_CALL", "check",  "NOT_EXPLORED"),
+    ("FLOP_CHECKRAISE_VS_CALL", "bet",    "NOT_EXPLORED"),
+    ("TURN_DONK",               "donk",   "NOT_EXPLORED"),
     ("TURN_DONK",               "check",  "TURN_VS_BARREL"),
     ("TURN_VS_BARREL",          "fold",   "TERMINAL"),
-    ("TURN_VS_BARREL",          "raise",  "TERMINAL"),
+    ("TURN_VS_BARREL",          "raise",  "NOT_EXPLORED"),
     ("TURN_VS_BARREL",          "call",   "RIVER_DONK"),
-    ("RIVER_DONK",              "donk",   "TERMINAL"),
+    ("RIVER_DONK",              "donk",   "NOT_EXPLORED"),
     ("RIVER_DONK",              "check",  "RIVER_VS_BARREL"),
     ("RIVER_VS_BARREL",         "fold",   "TERMINAL"),
     ("RIVER_VS_BARREL",         "call",   "TERMINAL"),
-    ("RIVER_VS_BARREL",         "raise",  "TERMINAL"),
+    ("RIVER_VS_BARREL",         "raise",  "NOT_EXPLORED"),
 ]
 
 # Map each non-terminal node to the action_probs key
@@ -280,13 +281,13 @@ def plot_path_tree() -> plt.Figure:
     node_pos: dict[str, tuple[float, float]] = {}   # unique_id → (x, y)
     edges_plot: list[tuple[str, str, str, str]] = [] # (uid_from, uid_to, action, node)
 
-    # We use a counter to uniquify terminal nodes
-    _term_counter = [0]
+    # We use a counter to uniquify leaf nodes (TERMINAL and NOT_EXPLORED)
+    _leaf_counter = [0]
 
     def _uid(label: str) -> str:
-        if label == "TERMINAL":
-            _term_counter[0] += 1
-            return f"TERMINAL_{_term_counter[0]}"
+        if label in ("TERMINAL", "NOT_EXPLORED"):
+            _leaf_counter[0] += 1
+            return f"{label}_{_leaf_counter[0]}"
         return label
 
     # Build a tree structure: parent_uid → list of (action, child_uid)
@@ -301,7 +302,7 @@ def plot_path_tree() -> plt.Figure:
             child_uid = _uid(child_label)
             children[parent_uid].append((action, child_uid))
             edges_plot.append((parent_uid, child_uid, action, parent_label))
-            if child_label != "TERMINAL":
+            if child_label not in ("TERMINAL", "NOT_EXPLORED"):
                 _build(child_label, child_uid)
 
     _build("PREFLOP", root_uid)
@@ -396,9 +397,13 @@ def plot_path_tree() -> plt.Figure:
 
     # Draw nodes
     for uid, (x, y) in node_pos.items():
-        if uid.startswith("TERMINAL"):
-            ax.plot(x, y, marker="x", markersize=10, color="#c0392b", linewidth=2)
+        if uid.startswith("NOT_EXPLORED"):
+            ax.plot(x, y, marker="o", markersize=8, color="#3498db", linewidth=0)
             ax.text(x + 0.05, y, "n/e", ha="left", va="center",
+                    fontsize=7, color="#3498db")
+        elif uid.startswith("TERMINAL"):
+            ax.plot(x, y, marker="x", markersize=10, color="#c0392b", linewidth=2)
+            ax.text(x + 0.05, y, "end", ha="left", va="center",
                     fontsize=7, color="#c0392b")
         else:
             label = node_labels.get(uid, uid)
@@ -409,10 +414,16 @@ def plot_path_tree() -> plt.Figure:
                           ec="#2c3e50", linewidth=1.5),
             )
 
-    # Legend for archetype colours (reuse ARCHETYPE_COLORS)
+    # Legend: archetype colours + leaf node types
     handles = [
         mpatches.Patch(color=c, label=f"{s} = {n}")
         for s, n, c in zip(_SHORT, ARCHETYPE_NAMES, ARCHETYPE_COLORS)
+    ]
+    handles += [
+        plt.Line2D([0], [0], marker="x", color="#c0392b", linewidth=0,
+                   markersize=9, markeredgewidth=2, label="end (hand ends)"),
+        plt.Line2D([0], [0], marker="o", color="#3498db", linewidth=0,
+                   markersize=8, label="n/e (branch not explored)"),
     ]
     ax.legend(handles=handles, loc="lower right", fontsize=9, framealpha=0.9)
 
